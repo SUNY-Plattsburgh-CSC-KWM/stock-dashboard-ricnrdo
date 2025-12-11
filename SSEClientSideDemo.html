@@ -6,34 +6,166 @@
   </head>
   <body>
     <div id="app"></div>
-    <script src="react/react.js"></script>
-    <script src="react/react-dom.js"></script>
-    <script src="react/babel.js"></script>
-    <script type="text/babel">
 
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <script type="text/babel">
       const useState = React.useState;
       const useEffect = React.useEffect;
-      
+
+      const priceHistory = {
+        IBM: [],
+        AMZN: [],
+        DOW: [],
+        NASDAQ: []
+      };
+      const MAX_POINTS = 500;
+
+      function addPrice(ticker, price) {
+        const arr = priceHistory[ticker];
+        if (!arr) return;
+        arr.push(price);
+        if (arr.length > MAX_POINTS) arr.shift();
+      }
+
+      function drawSpark(divId, dataArr) {
+        const box = document.getElementById(divId);
+        if (!box || dataArr.length === 0) return;
+
+        d3.select("#" + divId).selectAll("*").remove();
+
+        const width = box.clientWidth || 200;
+        const height = box.clientHeight || 110;
+
+        const margin = { top: 4, right: 4, bottom: 4, left: 4 };
+        const w = width - margin.left - margin.right;
+        const h = height - margin.top - margin.bottom;
+
+        const xScale = d3.scaleLinear()
+          .domain([0, dataArr.length - 1])
+          .range([0, w]);
+
+        const minVal = d3.min(dataArr);
+        const maxVal = d3.max(dataArr);
+
+        const yScale = d3.scaleLinear()
+          .domain([minVal, maxVal])
+          .range([h, 0]);
+
+        const line = d3.line()
+          .x((d, i) => xScale(i))
+          .y((d) => yScale(d));
+
+        const svg = d3.select("#" + divId)
+          .append("svg")
+          .attr("width", width)
+          .attr("height", height)
+          .append("g")
+          .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        svg.append("path")
+          .datum(dataArr)
+          .attr("fill", "none")
+          .attr("stroke", "steelblue")
+          .attr("stroke-width", 1)
+          .attr("d", line);
+      }
+
+      function StockCard({ stock, sparkId }) {
+        useEffect(() => {
+          if (stock.ticker) drawSpark(sparkId, priceHistory[stock.ticker]);
+        }, [stock.price]);
+
+        return (
+          <div style={{
+            border: "1px solid #ccc",
+            borderRadius: "4px",
+            padding: "8px",
+            height: "210px",
+            display: "flex",
+            flexDirection: "column",
+            boxSizing: "border-box",
+            backgroundColor: "beige",
+          }}>
+            <div style={{ marginBottom: "6px" }}>
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "14px"
+              }}>
+                <span><b>{stock.ticker}</b> — {stock.name}</span>
+                <span><b>${stock.price}</b></span>
+              </div>
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "12px",
+                color: "#000000"
+              }}>
+                <span>Volume:</span>
+                <span>{stock.volume}</span>
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div id={sparkId} style={{ width: "100%", height: "100%" }}></div>
+            </div>
+          </div>
+        );
+      }
+
       function App() {
-	  const [time, setTime] = useState('');
-	  useEffect(() => {
-              const eventSource = new EventSource('http://localhost:5000/events');
-              eventSource.onmessage = (event) => {
-		  const data = JSON.parse(event.data);
-		  setTime(data.time);
-              };
-              return () => eventSource.close();
-	  }, []);
-	  return (
-		  <div>
-		  <h1>Server-Sent Events Demo</h1>
-		  <p>Current Time: {time}</p>
-		  </div>
-	  );
+        const [ibm, setIbm] = useState({ ticker: "IBM", name: "IBM", price: 0, volume: 0 });
+        const [amzn, setAmzn] = useState({ ticker: "AMZN", name: "Amazon", price: 0, volume: 0 });
+        const [dow, setDow] = useState({ ticker: "DOW", name: "Dow Jones", price: 0, volume: 0 });
+        const [nasdaq, setNasdaq] = useState({ ticker: "NASDAQ", name: "NASDAQ", price: 0, volume: 0 });
+
+        useEffect(() => {
+          const stream = new EventSource("http://localhost:31415/stocks");
+
+          stream.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              const t = data.ticker;
+
+              addPrice(t, data.price);
+
+              if (t === "IBM") setIbm((o) => ({ ...o, ...data }));
+              else if (t === "AMZN") setAmzn((o) => ({ ...o, ...data }));
+              else if (t === "DOW") setDow((o) => ({ ...o, ...data }));
+              else if (t === "NASDAQ") setNasdaq((o) => ({ ...o, ...data }));
+            } catch (err) {
+              console.log("Error parsing SSE:", err);
+            }
+          };
+
+          return () => stream.close();
+        }, []);
+
+        return (
+          <div style={{ margin: "12px", fontFamily: "Arial, sans-serif" }}>
+            <h2>Stock Dashboard</h2>
+
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              gap: "14px",
+              maxWidth: "100vw"
+            }}>
+              <StockCard stock={ibm} sparkId="sparkIBM" />
+              <StockCard stock={amzn} sparkId="sparkAMZN" />
+              <StockCard stock={dow} sparkId="sparkDOW" />
+              <StockCard stock={nasdaq} sparkId="sparkNASDAQ" />
+            </div>
+          </div>
+        );
       }
       ReactDOM.render(
               <App />,
-	  document.getElementById('app'));
+          document.getElementById('app'));
     </script>
   </body>
 </html>
